@@ -36,7 +36,10 @@ jobs:
           echo "FULL COMPILE OK"
           file safeshutdown
 
-      - name: Full compile WITH -Werror
+      - name: "Full compile WITH -Werror"
         run: |
-          gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread 2>&1
+          OUTPUT=$(gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread 2>&1) || {
+            echo "::error::GCC WERROR FAILED: ${OUTPUT}"
+            exit 1
+          }
           echo "WERROR COMPILE OK"
