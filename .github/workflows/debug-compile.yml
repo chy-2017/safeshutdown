@@ -19,13 +19,13 @@ jobs:
           echo "=== libs ==="
           ldconfig -p | grep -i pthread | head -3
 
-      - name: Test: compile a minimal C program
+      - name: "Test: compile a minimal C program"
         run: |
           echo 'int main(){return 0;}' > /tmp/test.c
           gcc -O2 -Wall -Wextra -Werror -std=c11 -o /tmp/test /tmp/test.c -lpthread
           echo "MINIMAL COMPILE OK"
 
-      - name: Test: check safeshutdown.c syntax
+      - name: "Test: check safeshutdown.c syntax"
         run: |
           gcc -O2 -Wall -Wextra -Werror -std=c11 -fsyntax-only safeshutdown.c 2>&1 || true
           gcc -O2 -Wall -Wextra -std=c11 -fsyntax-only safeshutdown.c 2>&1
