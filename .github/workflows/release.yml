@@ -11,132 +11,148 @@ on:
         type: string
 
 jobs:
-  build-matrix:
-    name: "构建 ${{ matrix.target }}"
+  amd64-glibc:
+    name: "amd64 glibc"
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - "amd64-linux-gnu"
-          - "aarch64-linux-gnu"
-          - "i686-linux-gnu"
-          - "amd64-linux-musl"
-          - "aarch64-linux-musl"
-        include:
-          - target: "amd64-linux-gnu"
-            cc: "gcc"
-            strip: "strip"
-            flags: ""
-          - target: "aarch64-linux-gnu"
-            cc: "aarch64-linux-gnu-gcc"
-            strip: "aarch64-linux-gnu-strip"
-            flags: ""
-          - target: "i686-linux-gnu"
-            cc: "gcc"
-            strip: "strip"
-            flags: "-m32"
-          - target: "amd64-linux-musl"
-            cc: "gcc"
-            strip: "strip"
-            flags: "-static"
-          - target: "aarch64-linux-musl"
-            cc: "aarch64-linux-gnu-gcc"
-            strip: "aarch64-linux-gnu-strip"
-            flags: "-static"
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: 安装交叉编译工具
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            gcc gcc-multilib \
-            gcc-aarch64-linux-gnu \
-            musl-tools 2>/dev/null || true
-
-      - name: 编译
-        run: |
-          ${{ matrix.cc }} -O2 -Wall -Wextra -Werror -std=c11 \
-            ${{ matrix.flags }} \
-            -o safeshutdown safeshutdown.c -lpthread
-          ${{ matrix.strip }} safeshutdown
-          ls -lh safeshutdown
-          file safeshutdown
-
-      - name: 打包
-        run: |
+      - run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc make
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread
+          strip safeshutdown
+      - run: |
           mkdir -p dist
-          cp safeshutdown "dist/safeshutdown-${{ matrix.target }}"
-          cp safeshutdown.conf "dist/safeshutdown-${{ matrix.target }}.conf"
-          cp safeshutdown.service "dist/safeshutdown-${{ matrix.target }}.service"
-          cp README.md "dist/README-${{ matrix.target }}.md" 2>/dev/null || true
-
-      - name: 上传构件
-        uses: actions/upload-artifact@v4
+          cp safeshutdown dist/safeshutdown-amd64-glibc
+          cp safeshutdown.conf dist/
+          cp safeshutdown.service dist/
+      - uses: actions/upload-artifact@v4
         with:
-          name: safeshutdown-${{ matrix.target }}
+          name: safeshutdown-amd64-glibc
           path: dist/
-          if-no-files-found: error
+
+  i686-glibc:
+    name: "i686 glibc"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-multilib
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -m32 -o safeshutdown safeshutdown.c -lpthread
+          strip safeshutdown
+      - run: |
+          mkdir -p dist
+          cp safeshutdown dist/safeshutdown-i686-glibc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-i686-glibc
+          path: dist/
+
+  arm64-glibc:
+    name: "arm64 glibc"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-aarch64-linux-gnu
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -std=c11 \
+            -o safeshutdown safeshutdown.c -lpthread
+          aarch64-linux-gnu-strip safeshutdown
+      - run: |
+          mkdir -p dist
+          cp safeshutdown dist/safeshutdown-arm64-glibc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-arm64-glibc
+          path: dist/
+
+  amd64-musl:
+    name: "amd64 musl (static)"
+    runs-on: ubuntu-latest
+    container: alpine:3.20
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          apk add --no-cache gcc musl-dev make
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
+          strip safeshutdown
+      - run: |
+          mkdir -p dist
+          cp safeshutdown dist/safeshutdown-amd64-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-amd64-musl
+          path: dist/
+
+  arm64-musl:
+    name: "arm64 musl (static)"
+    runs-on: ubuntu-latest
+    container: alpine:3.20
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          apk add --no-cache gcc musl-dev make
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
+          strip safeshutdown
+      - run: |
+          mkdir -p dist
+          cp safeshutdown dist/safeshutdown-arm64-musl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-arm64-musl
+          path: dist/
 
   create-release:
-    name: "创建 Release"
-    needs: [build-matrix]
+    name: "打包 Release"
+    needs: [amd64-glibc, i686-glibc, arm64-glibc, amd64-musl, arm64-musl]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: 下载所有构件
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: release-artifacts
+          path: artifacts
 
-      - name: 生成发布包
+      - name: 整理发布包
         run: |
-          mkdir final-release
           VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          mkdir -p release
 
-          # 整理目录结构
-          for dir in release-artifacts/safeshutdown-*; do
-            arch="${dir#release-artifacts/safeshutdown-}"
-            mkdir -p "final-release/safeshutdown-${arch}"
-            cp "$dir"/* "final-release/safeshutdown-${arch}/" 2>/dev/null
+          # 每个架构一个子目录
+          for d in artifacts/*/; do
+            name="$(basename "$d")"
+            mkdir -p "release/safeshutdown-$name"
+            cp -r "$d"/* "release/safeshutdown-$name/"
           done
 
-          # 创建源码包
-          cd release-artifacts
-          # 从第一个构件复制源码相关文件
-          FIRST=($(ls -d safeshutdown-*))
-          if [ -n "$FIRST" ]; then
-            cp "${FIRST[0]}"/*.md "${FIRST[0]}"/*.service \
-              ../final-release/ 2>/dev/null || true
-          fi
-          cd ..
-
-          # 创建 README
-          cat > final-release/README.txt << 'EOF'
+          # 生成说明文件
+          cat > release/README.txt << READMEND
           ========================================
           safeshutdown — 系统安全监护程序
+          版本: ${VERSION}
           ========================================
 
-          版本: VERSION_PLACEHOLDER
+          包含架构：
+            amd64-glibc   — x86_64, GNU libc (通用)
+            i686-glibc    — 32位 x86, GNU libc
+            arm64-glibc   — ARM64/AArch64, GNU libc
+            amd64-musl    — x86_64, musl libc (静态, 便携)
+            arm64-musl    — ARM64, musl libc (静态, 便携)
 
-          安装:
-            1. 根据架构选择对应的二进制
+          安装：
+            1. 根据架构选择对应目录
             2. sudo cp safeshutdown-<arch> /usr/local/sbin/safeshutdown
             3. sudo cp safeshutdown.conf /etc/safeshutdown.conf
             4. sudo cp safeshutdown.service /etc/systemd/system/
             5. sudo systemctl enable --now safeshutdown
-          EOF
-          sed -i "s/VERSION_PLACEHOLDER/$VERSION/" final-release/README.txt
+          READMEND
 
-      - name: 创建 Release
+      - name: 创建 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "safeshutdown ${{ github.event.inputs.version || github.ref_name }}"
-          body_path: final-release/README.txt
-          files: |
-            final-release/*
+          body_path: release/README.txt
+          files: release/**
           draft: false
           prerelease: false
