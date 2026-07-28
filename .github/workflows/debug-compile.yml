@@ -1,0 +1,31 @@
+name: Debug Compile
+on: [push, workflow_dispatch]
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Show environment
+        run: |
+          pwd
+          ls -la
+          id
+          which gcc
+          gcc --version 2>&1
+      - name: Try compile with captured output
+        run: |
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread > /tmp/compile_stdout.txt 2> /tmp/compile_stderr.txt
+          echo "EXIT CODE: $?"
+      - name: Show stderr
+        if: always()
+        run: |
+          echo "=== STDOUT ==="
+          cat /tmp/compile_stdout.txt 2>/dev/null || echo "(empty)"
+          echo "=== STDERR ==="
+          cat /tmp/compile_stderr.txt 2>/dev/null || echo "(empty)"
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: compile-logs
+          path: /tmp/compile_*.txt
