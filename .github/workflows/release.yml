@@ -126,8 +126,8 @@ jobs:
             cp -r "$d"/* "release/safeshutdown-$name/"
           done
 
-          # 生成说明文件
-          cat > release/README.txt << READMEND
+          # 生成说明文件（放在 release/ 外面，不作为下载文件）
+          cat > /tmp/README_release.txt << READMEND
           ========================================
           safeshutdown — 系统安全监护程序
           版本: ${VERSION}
@@ -152,7 +152,7 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           name: "safeshutdown ${{ github.event.inputs.version || github.ref_name }}"
-          body_path: release/README.txt
+          body_path: /tmp/README_release.txt
           files: release/**
           draft: false
           prerelease: false
