@@ -70,7 +70,10 @@ jobs:
           path: .
       - run: chmod +x safeshutdown && file safeshutdown
       - run: ./safeshutdown -h
-      - run: timeout 5 ./safeshutdown -d -n 2>&1 || true
+      - name: dry-run smoke test
+        run: |
+          timeout 3 ./safeshutdown -d -n 2>&1 | head -5; true
+          file safeshutdown
 
   lint:
     name: "代码审查"

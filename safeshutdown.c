@@ -527,6 +527,11 @@ static void update_heartbeat(void)
  * ================================================================ */
 static void watchdog_child_loop(void)
 {
+    /* 重置信号处理器为默认行为，让父进程能 kill 掉子进程 */
+    signal(SIGTERM, SIG_DFL);
+    signal(SIGINT,  SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
+
     /* 关闭 stdin，最小化资源 */
     close(0);
 
