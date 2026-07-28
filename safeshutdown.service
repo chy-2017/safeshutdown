@@ -1,0 +1,25 @@
+[Unit]
+Description=SafeShutdown — 系统安全监护程序
+Documentation=https://github.com/youyou/safeshutdown
+DefaultDependencies=no
+After=sysinit.target
+Before=shutdown.target reboot.target halt.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/safeshutdown
+ExecStopPost=/usr/bin/sync
+Restart=on-failure
+RestartSec=5
+LimitRSS=16M
+LimitNOFILE=32
+LockPersonality=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_BOOT CAP_SYS_RAWIO
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=~AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

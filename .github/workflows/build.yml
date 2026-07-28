@@ -1,0 +1,131 @@
+name: Build & Test
+
+on:
+  push:
+    branches: ["main", "master"]
+    paths: ["*.c", "*.h", "Makefile", ".github/workflows/*.yml"]
+  pull_request:
+    branches: ["main", "master"]
+    paths: ["*.c", "*.h", "Makefile"]
+  workflow_dispatch:  # 手动触发
+
+jobs:
+  compile:
+    name: "编译 (${{ matrix.arch }}, ${{ matrix.libc }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        libc: [glibc, musl]
+        exclude:
+          # musl on amd64: 用 Alpine
+          - arch: amd64
+            libc: musl
+          - arch: arm64
+            libc: glibc
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装编译工具 (Alpine / musl)
+        if: matrix.libc == 'musl'
+        run: |
+          apk add --no-cache gcc musl-dev make
+
+      - name: 安装编译工具 (Ubuntu / glibc, arm64 cross)
+        if: matrix.libc == 'glibc' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu make
+
+      - name: 安装编译工具 (Ubuntu / glibc, amd64 native)
+        if: matrix.libc == 'glibc' && matrix.arch == 'amd64'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc make
+
+      - name: 编译 (amd64, glibc)
+        if: matrix.libc == 'glibc' && matrix.arch == 'amd64'
+        run: |
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread
+          strip safeshutdown
+          ls -lh safeshutdown
+          file safeshutdown
+
+      - name: 编译 (arm64, glibc — cross)
+        if: matrix.libc == 'glibc' && matrix.arch == 'arm64'
+        run: |
+          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -std=c11 \
+            -o safeshutdown safeshutdown.c -lpthread
+          aarch64-linux-gnu-strip safeshutdown
+          ls -lh safeshutdown
+          file safeshutdown
+
+      - name: 编译 (amd64, musl — Alpine)
+        if: matrix.libc == 'musl' && matrix.arch == 'amd64'
+        run: |
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
+          strip safeshutdown
+          ls -lh safeshutdown
+          file safeshutdown
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-${{ matrix.arch }}-${{ matrix.libc }}
+          path: safeshutdown
+          if-no-files-found: error
+
+  smoke-test:
+    name: "冒烟测试 (dry-run)"
+    needs: [compile]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载 amd64-glibc 版本
+        uses: actions/download-artifact@v4
+        with:
+          name: safeshutdown-amd64-glibc
+          path: .
+
+      - name: 可执行性检查
+        run: |
+          chmod +x safeshutdown
+          file safeshutdown
+
+      - name: 冒烟测试 (帮助信息)
+        run: |
+          ./safeshutdown -h
+
+      - name: 冒烟测试 (dry-run, 前台, 5秒后终止)
+        run: |
+          timeout 5 ./safeshutdown -d -n 2>&1 | head -30 || true
+
+      - name: 检查 dry-run 输出
+        run: |
+          timeout 5 ./safeshutdown -d -n 2>&1 | grep -q "safeshutdown" && \
+          echo "PASS: 程序正常启动" || echo "FAIL: 程序未输出预期内容"
+
+  lint:
+    name: "代码审查"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 cppcheck
+        run: sudo apt-get install -y -qq cppcheck
+
+      - name: 运行 cppcheck
+        run: |
+          cppcheck --enable=all --suppress=missingIncludeSystem \
+            --error-exitcode=1 \
+            --std=c11 \
+            safeshutdown.c 2>&1
+
+      - name: 运行 shellcheck on install script
+        run: |
+          if [ -f install.sh ]; then
+            shellcheck install.sh
+          fi

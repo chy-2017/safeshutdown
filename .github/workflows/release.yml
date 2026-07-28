@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "发布版本号 (如 v1.0.0)"
+        required: true
+        type: string
+
+jobs:
+  build-matrix:
+    name: "构建 ${{ matrix.target }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - "amd64-linux-gnu"
+          - "aarch64-linux-gnu"
+          - "i686-linux-gnu"
+          - "amd64-linux-musl"
+          - "aarch64-linux-musl"
+        include:
+          - target: "amd64-linux-gnu"
+            cc: "gcc"
+            strip: "strip"
+            flags: ""
+          - target: "aarch64-linux-gnu"
+            cc: "aarch64-linux-gnu-gcc"
+            strip: "aarch64-linux-gnu-strip"
+            flags: ""
+          - target: "i686-linux-gnu"
+            cc: "gcc"
+            strip: "strip"
+            flags: "-m32"
+          - target: "amd64-linux-musl"
+            cc: "gcc"
+            strip: "strip"
+            flags: "-static"
+          - target: "aarch64-linux-musl"
+            cc: "aarch64-linux-gnu-gcc"
+            strip: "aarch64-linux-gnu-strip"
+            flags: "-static"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装交叉编译工具
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            gcc gcc-multilib \
+            gcc-aarch64-linux-gnu \
+            musl-tools 2>/dev/null || true
+
+      - name: 编译
+        run: |
+          ${{ matrix.cc }} -O2 -Wall -Wextra -Werror -std=c11 \
+            ${{ matrix.flags }} \
+            -o safeshutdown safeshutdown.c -lpthread
+          ${{ matrix.strip }} safeshutdown
+          ls -lh safeshutdown
+          file safeshutdown
+
+      - name: 打包
+        run: |
+          mkdir -p dist
+          cp safeshutdown "dist/safeshutdown-${{ matrix.target }}"
+          cp safeshutdown.conf "dist/safeshutdown-${{ matrix.target }}.conf"
+          cp safeshutdown.service "dist/safeshutdown-${{ matrix.target }}.service"
+          cp README.md "dist/README-${{ matrix.target }}.md" 2>/dev/null || true
+
+      - name: 上传构件
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+
+  create-release:
+    name: "创建 Release"
+    needs: [build-matrix]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 下载所有构件
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: 生成发布包
+        run: |
+          mkdir final-release
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+
+          # 整理目录结构
+          for dir in release-artifacts/safeshutdown-*; do
+            arch="${dir#release-artifacts/safeshutdown-}"
+            mkdir -p "final-release/safeshutdown-${arch}"
+            cp "$dir"/* "final-release/safeshutdown-${arch}/" 2>/dev/null
+          done
+
+          # 创建源码包
+          cd release-artifacts
+          # 从第一个构件复制源码相关文件
+          FIRST=($(ls -d safeshutdown-*))
+          if [ -n "$FIRST" ]; then
+            cp "${FIRST[0]}"/*.md "${FIRST[0]}"/*.service \
+              ../final-release/ 2>/dev/null || true
+          fi
+          cd ..
+
+          # 创建 README
+          cat > final-release/README.txt << 'EOF'
+          ========================================
+          safeshutdown — 系统安全监护程序
+          ========================================
+
+          版本: VERSION_PLACEHOLDER
+
+          安装:
+            1. 根据架构选择对应的二进制
+            2. sudo cp safeshutdown-<arch> /usr/local/sbin/safeshutdown
+            3. sudo cp safeshutdown.conf /etc/safeshutdown.conf
+            4. sudo cp safeshutdown.service /etc/systemd/system/
+            5. sudo systemctl enable --now safeshutdown
+          EOF
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/" final-release/README.txt
+
+      - name: 创建 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "safeshutdown ${{ github.event.inputs.version || github.ref_name }}"
+          body_path: final-release/README.txt
+          files: |
+            final-release/*
+          draft: false
+          prerelease: false
