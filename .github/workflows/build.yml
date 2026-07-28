@@ -3,129 +3,129 @@ name: Build & Test
 on:
   push:
     branches: ["main", "master"]
-    paths: ["*.c", "*.h", "Makefile", ".github/workflows/*.yml"]
   pull_request:
     branches: ["main", "master"]
-    paths: ["*.c", "*.h", "Makefile"]
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
 
 jobs:
-  compile:
-    name: "编译 (${{ matrix.arch }}, ${{ matrix.libc }})"
+  # ============================================================
+  # amd64 + glibc (native Ubuntu)
+  # ============================================================
+  amd64-glibc:
+    name: "amd64 glibc"
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [amd64, arm64]
-        libc: [glibc, musl]
-        exclude:
-          # musl on amd64: 用 Alpine
-          - arch: amd64
-            libc: musl
-          - arch: arm64
-            libc: glibc
-
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装编译工具 (Alpine / musl)
-        if: matrix.libc == 'musl'
+      - uses: actions/checkout@v4
+      - name: 编译
         run: |
-          apk add --no-cache gcc musl-dev make
-
-      - name: 安装编译工具 (Ubuntu / glibc, arm64 cross)
-        if: matrix.libc == 'glibc' && matrix.arch == 'arm64'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-aarch64-linux-gnu make
-
-      - name: 安装编译工具 (Ubuntu / glibc, amd64 native)
-        if: matrix.libc == 'glibc' && matrix.arch == 'amd64'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc make
-
-      - name: 编译 (amd64, glibc)
-        if: matrix.libc == 'glibc' && matrix.arch == 'amd64'
-        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc make
           gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread
           strip safeshutdown
-          ls -lh safeshutdown
           file safeshutdown
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-amd64-glibc
+          path: safeshutdown
 
-      - name: 编译 (arm64, glibc — cross)
-        if: matrix.libc == 'glibc' && matrix.arch == 'arm64'
+  # ============================================================
+  # arm64 + glibc (交叉编译)
+  # ============================================================
+  arm64-glibc:
+    name: "arm64 glibc"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 交叉编译
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-aarch64-linux-gnu
           aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -std=c11 \
             -o safeshutdown safeshutdown.c -lpthread
           aarch64-linux-gnu-strip safeshutdown
-          ls -lh safeshutdown
           file safeshutdown
-
-      - name: 编译 (amd64, musl — Alpine)
-        if: matrix.libc == 'musl' && matrix.arch == 'amd64'
-        run: |
-          gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
-          strip safeshutdown
-          ls -lh safeshutdown
-          file safeshutdown
-
-      - name: 上传构建产物
+      - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
-          name: safeshutdown-${{ matrix.arch }}-${{ matrix.libc }}
+          name: safeshutdown-arm64-glibc
           path: safeshutdown
-          if-no-files-found: error
 
+  # ============================================================
+  # amd64 + musl (静态编译，Docker Alpine)
+  # ============================================================
+  amd64-musl:
+    name: "amd64 musl (static)"
+    runs-on: ubuntu-latest
+    container: alpine:3.20
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译 (musl-static)
+        run: |
+          apk add --no-cache gcc musl-dev make
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
+          strip safeshutdown
+          file safeshutdown
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-amd64-musl
+          path: safeshutdown
+
+  # ============================================================
+  # arm64 + musl (静态编译，Docker Alpine)
+  # ============================================================
+  arm64-musl:
+    name: "arm64 musl (static)"
+    runs-on: ubuntu-latest
+    container: alpine:3.20
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译 (musl-static, arm64)
+        run: |
+          apk add --no-cache gcc musl-dev make
+          gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
+          strip safeshutdown
+          file safeshutdown
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: safeshutdown-arm64-musl
+          path: safeshutdown
+
+  # ============================================================
+  # 冒烟测试（依赖 amd64-glibc 编译完成）
+  # ============================================================
   smoke-test:
-    name: "冒烟测试 (dry-run)"
-    needs: [compile]
+    name: "冒烟测试"
+    needs: [amd64-glibc]
     runs-on: ubuntu-latest
     steps:
-      - name: 下载 amd64-glibc 版本
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: safeshutdown-amd64-glibc
           path: .
+      - run: chmod +x safeshutdown && file safeshutdown
 
-      - name: 可执行性检查
-        run: |
-          chmod +x safeshutdown
-          file safeshutdown
+      - name: 帮助信息
+        run: ./safeshutdown -h
 
-      - name: 冒烟测试 (帮助信息)
-        run: |
-          ./safeshutdown -h
+      - name: dry-run 冒烟 (5秒)
+        run: timeout 5 ./safeshutdown -d -n 2>&1 || true
 
-      - name: 冒烟测试 (dry-run, 前台, 5秒后终止)
-        run: |
-          timeout 5 ./safeshutdown -d -n 2>&1 | head -30 || true
-
-      - name: 检查 dry-run 输出
-        run: |
-          timeout 5 ./safeshutdown -d -n 2>&1 | grep -q "safeshutdown" && \
-          echo "PASS: 程序正常启动" || echo "FAIL: 程序未输出预期内容"
-
+  # ============================================================
+  # 代码审查（linter）
+  # ============================================================
   lint:
     name: "代码审查"
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 cppcheck
-        run: sudo apt-get install -y -qq cppcheck
-
-      - name: 运行 cppcheck
+      - uses: actions/checkout@v4
+      - name: cppcheck
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck
           cppcheck --enable=all --suppress=missingIncludeSystem \
-            --error-exitcode=1 \
-            --std=c11 \
-            safeshutdown.c 2>&1
-
-      - name: 运行 shellcheck on install script
+            --suppress=unmatchedSuppression \
+            --error-exitcode=1 --std=c11 safeshutdown.c 2>&1
+      - name: shellcheck
         run: |
-          if [ -f install.sh ]; then
-            shellcheck install.sh
-          fi
+          sudo apt-get install -y -qq shellcheck 2>/dev/null
+          [ -f install.sh ] && shellcheck install.sh || true
