@@ -15,7 +15,7 @@ jobs:
     name: "amd64 glibc"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq gcc make
           gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread
@@ -25,7 +25,7 @@ jobs:
           cp safeshutdown dist/safeshutdown-amd64-glibc
           cp safeshutdown.conf dist/
           cp safeshutdown.service dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-amd64-glibc
           path: dist/
@@ -34,7 +34,7 @@ jobs:
     name: "i686 glibc"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update -qq
@@ -44,7 +44,7 @@ jobs:
       - run: |
           mkdir -p dist
           cp safeshutdown dist/safeshutdown-i686-glibc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-i686-glibc
           path: dist/
@@ -53,7 +53,7 @@ jobs:
     name: "arm64 glibc"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq gcc-aarch64-linux-gnu
           aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -std=c11 \
@@ -62,7 +62,7 @@ jobs:
       - run: |
           mkdir -p dist
           cp safeshutdown dist/safeshutdown-arm64-glibc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-arm64-glibc
           path: dist/
@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     container: alpine:3.20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           apk add --no-cache gcc musl-dev make
           gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
@@ -80,7 +80,7 @@ jobs:
       - run: |
           mkdir -p dist
           cp safeshutdown dist/safeshutdown-amd64-musl
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-amd64-musl
           path: dist/
@@ -90,7 +90,7 @@ jobs:
     runs-on: ubuntu-latest
     container: alpine:3.20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           apk add --no-cache gcc musl-dev make
           gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
@@ -98,7 +98,7 @@ jobs:
       - run: |
           mkdir -p dist
           cp safeshutdown dist/safeshutdown-arm64-musl
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-arm64-musl
           path: dist/
@@ -110,7 +110,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -149,7 +149,7 @@ jobs:
           READMEND
 
       - name: 创建 GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: "safeshutdown ${{ github.event.inputs.version || github.ref_name }}"
           body_path: release/README.txt

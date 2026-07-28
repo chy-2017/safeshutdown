@@ -15,7 +15,7 @@ jobs:
     name: "amd64 glibc"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 编译
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq gcc make
@@ -23,7 +23,7 @@ jobs:
           strip safeshutdown
           file safeshutdown
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-amd64-glibc
           path: safeshutdown
@@ -35,7 +35,7 @@ jobs:
     name: "arm64 glibc"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 交叉编译
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq gcc-aarch64-linux-gnu
@@ -44,7 +44,7 @@ jobs:
           aarch64-linux-gnu-strip safeshutdown
           file safeshutdown
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-arm64-glibc
           path: safeshutdown
@@ -57,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     container: alpine:3.20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 编译 (musl-static)
         run: |
           apk add --no-cache gcc musl-dev make
@@ -65,7 +65,7 @@ jobs:
           strip safeshutdown
           file safeshutdown
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-amd64-musl
           path: safeshutdown
@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     container: alpine:3.20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: 编译 (musl-static, arm64)
         run: |
           apk add --no-cache gcc musl-dev make
@@ -86,7 +86,7 @@ jobs:
           strip safeshutdown
           file safeshutdown
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-arm64-musl
           path: safeshutdown
@@ -99,7 +99,7 @@ jobs:
     needs: [amd64-glibc]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: safeshutdown-amd64-glibc
           path: .
@@ -118,7 +118,7 @@ jobs:
     name: "代码审查"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: cppcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck
