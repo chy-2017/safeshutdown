@@ -8,92 +8,57 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ============================================================
-  # amd64 + glibc (native Ubuntu)
-  # ============================================================
   amd64-glibc:
     name: "amd64 glibc"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: 编译
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq gcc make
-          gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread
-          strip safeshutdown
-          file safeshutdown
-      - name: 上传产物
-        uses: actions/upload-artifact@v7
+      - run: which gcc && gcc --version | head -1
+      - run: gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread 2>&1
+      - run: file safeshutdown
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-amd64-glibc
           path: safeshutdown
 
-  # ============================================================
-  # arm64 + glibc (交叉编译)
-  # ============================================================
   arm64-glibc:
     name: "arm64 glibc"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: 交叉编译
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-aarch64-linux-gnu
-          aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -std=c11 \
-            -o safeshutdown safeshutdown.c -lpthread
-          aarch64-linux-gnu-strip safeshutdown
-          file safeshutdown
-      - name: 上传产物
-        uses: actions/upload-artifact@v7
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-aarch64-linux-gnu
+      - run: aarch64-linux-gnu-gcc -O2 -Wall -Wextra -Werror -std=c11 -o safeshutdown safeshutdown.c -lpthread 2>&1
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-arm64-glibc
           path: safeshutdown
 
-  # ============================================================
-  # amd64 + musl (静态编译，Docker Alpine)
-  # ============================================================
   amd64-musl:
-    name: "amd64 musl (static)"
+    name: "amd64 musl"
     runs-on: ubuntu-latest
     container: alpine:3.20
     steps:
       - uses: actions/checkout@v7
-      - name: 编译 (musl-static)
-        run: |
-          apk add --no-cache gcc musl-dev make
-          gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
-          strip safeshutdown
-          file safeshutdown
-      - name: 上传产物
-        uses: actions/upload-artifact@v7
+      - run: apk add --no-cache gcc musl-dev make
+      - run: gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread 2>&1
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-amd64-musl
           path: safeshutdown
 
-  # ============================================================
-  # arm64 + musl (静态编译，Docker Alpine)
-  # ============================================================
   arm64-musl:
-    name: "arm64 musl (static)"
+    name: "arm64 musl"
     runs-on: ubuntu-latest
     container: alpine:3.20
     steps:
       - uses: actions/checkout@v7
-      - name: 编译 (musl-static, arm64)
-        run: |
-          apk add --no-cache gcc musl-dev make
-          gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
-          strip safeshutdown
-          file safeshutdown
-      - name: 上传产物
-        uses: actions/upload-artifact@v7
+      - run: apk add --no-cache gcc musl-dev make
+      - run: gcc -O2 -Wall -Wextra -Werror -std=c11 -static -o safeshutdown safeshutdown.c -lpthread 2>&1
+      - uses: actions/upload-artifact@v7
         with:
           name: safeshutdown-arm64-musl
           path: safeshutdown
 
-  # ============================================================
-  # 冒烟测试（依赖 amd64-glibc 编译完成）
-  # ============================================================
   smoke-test:
     name: "冒烟测试"
     needs: [amd64-glibc]
@@ -104,28 +69,14 @@ jobs:
           name: safeshutdown-amd64-glibc
           path: .
       - run: chmod +x safeshutdown && file safeshutdown
+      - run: ./safeshutdown -h
+      - run: timeout 5 ./safeshutdown -d -n 2>&1 || true
 
-      - name: 帮助信息
-        run: ./safeshutdown -h
-
-      - name: dry-run 冒烟 (5秒)
-        run: timeout 5 ./safeshutdown -d -n 2>&1 || true
-
-  # ============================================================
-  # 代码审查（linter）
-  # ============================================================
   lint:
     name: "代码审查"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: cppcheck
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck
-          cppcheck --enable=all --suppress=missingIncludeSystem \
-            --suppress=unmatchedSuppression \
-            --error-exitcode=1 --std=c11 safeshutdown.c 2>&1
-      - name: shellcheck
-        run: |
-          sudo apt-get install -y -qq shellcheck 2>/dev/null
-          [ -f install.sh ] && shellcheck install.sh || true
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck
+      - run: cppcheck --enable=all --suppress=missingIncludeSystem --error-exitcode=1 --std=c11 safeshutdown.c 2>&1
+      - run: sudo apt-get install -y -qq shellcheck 2>/dev/null; [ -f install.sh ] && shellcheck install.sh || true
