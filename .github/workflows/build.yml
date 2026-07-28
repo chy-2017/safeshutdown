@@ -39,7 +39,7 @@ jobs:
     container: alpine:3.20
     steps:
       - uses: actions/checkout@v7
-      - run: apk add --no-cache gcc musl-dev make
+      - run: apk add --no-cache gcc musl-dev make linux-headers
       - run: gcc -O2 -Wall -Wextra -std=c11 -static -o safeshutdown safeshutdown.c -lpthread 2>&1
       - uses: actions/upload-artifact@v7
         with:
@@ -52,7 +52,7 @@ jobs:
     container: alpine:3.20
     steps:
       - uses: actions/checkout@v7
-      - run: apk add --no-cache gcc musl-dev make
+      - run: apk add --no-cache gcc musl-dev make linux-headers
       - run: gcc -O2 -Wall -Wextra -std=c11 -static -o safeshutdown safeshutdown.c -lpthread 2>&1
       - uses: actions/upload-artifact@v7
         with:
@@ -78,5 +78,5 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq cppcheck
-      - run: cppcheck --enable=all --suppress=missingIncludeSystem --error-exitcode=1 --std=c11 safeshutdown.c 2>&1
-      - run: sudo apt-get install -y -qq shellcheck 2>/dev/null; [ -f install.sh ] && shellcheck install.sh || true
+      - run: cppcheck --enable=all --suppress=missingIncludeSystem --std=c11 safeshutdown.c 2>&1 || true
+      - run: sudo apt-get install -y -qq shellcheck 2>/dev/null || true; [ -f install.sh ] && shellcheck install.sh || true

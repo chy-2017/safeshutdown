@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: |
-          apk add --no-cache gcc musl-dev make
+          apk add --no-cache gcc musl-dev make linux-headers
           gcc -O2 -Wall -Wextra -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
           strip safeshutdown
       - run: |
@@ -92,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: |
-          apk add --no-cache gcc musl-dev make
+          apk add --no-cache gcc musl-dev make linux-headers
           gcc -O2 -Wall -Wextra -std=c11 -static -o safeshutdown safeshutdown.c -lpthread
           strip safeshutdown
       - run: |
