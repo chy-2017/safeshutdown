@@ -536,6 +536,9 @@ static void watchdog_child_loop(void)
     signal(SIGINT,  SIG_DFL);
     signal(SIGQUIT, SIG_DFL);
 
+    /* 最高优先级：系统卡死时确保看门狗能抢到 CPU */
+    setpriority(PRIO_PROCESS, 0, -20);
+
     /* 关闭 stdin，最小化资源 */
     close(0);
 
@@ -902,6 +905,9 @@ int main(int argc, char *argv[])
         fprintf(stderr, "错误：需要 root 权限运行！请使用 sudo。\n");
         return 1;
     }
+
+    /* 设最高优先级（nice -20），系统卡死时确保能抢到 CPU */
+    setpriority(PRIO_PROCESS, 0, -20);
 
     /* 加载配置 */
     load_config(config_path);

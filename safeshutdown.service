@@ -9,6 +9,8 @@ Before=shutdown.target reboot.target halt.target
 Type=simple
 # -d 前台运行不守护化，由 systemd 管理进程生命周期
 ExecStart=/usr/local/sbin/safeshutdown -d
+# 最高调度优先级，系统满载时仍能抢到 CPU
+Nice=-20
 ExecStopPost=/usr/bin/sync
 Restart=on-failure
 RestartSec=5
