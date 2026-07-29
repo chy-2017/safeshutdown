@@ -77,15 +77,15 @@ static const Config DEFAULT_CONFIG = {
     .check_interval_ms      = 2000,
     .watchdog_timeout_sec   = 20,
     .heartbeat_timeout_sec  = 10,
-    .grace_period_sec       = 30,
-    .mem_critical_pct       = 4,
-    .mem_warning_pct        = 8,
-    .psi_mem_critical       = 70,
-    .psi_mem_warning        = 40,
-    .cpu_load_critical      = 6,
+    .grace_period_sec       = 15,
+    .mem_critical_pct       = 8,
+    .mem_warning_pct        = 15,
+    .psi_mem_critical       = 50,
+    .psi_mem_warning        = 30,
+    .cpu_load_critical      = 5,
     .cpu_load_warning       = 3,
     .oom_kill_threshold     = 1,
-    .psi_io_critical        = 90,
+    .psi_io_critical        = 80,
     .dry_run                = false,
     .use_sysrq              = true,
 };
@@ -103,6 +103,8 @@ static int   g_watchdog_fd  = -1;     /* /dev/watchdog 文件描述符 */
 static char  g_heartbeat_path[256];   /* 心跳文件路径 */
 static int   g_oom_last = 0;          /* 上次 OOM kill 计数 */
 static int   g_cpu_count = 0;         /* CPU 核心数 */
+/* 告警持续计数：连续 N 周期未恢复则自动升级 */
+static int   g_escalation_persist = 0;
 
 /* 锁：escalation_level 写保护 */
 static pthread_mutex_t g_level_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -988,16 +990,31 @@ int main(int argc, char *argv[])
         /* 健康检查 */
         health_check();
 
-        /* 如果有告警，执行对应动作 */
+        /* 告警升级与自动升级逻辑 */
         int level = get_level();
         if (level >= 2) {
+            g_escalation_persist++;
+
+            /* 自动升级规则：
+             * - 连续 3 个周期仍为 CRITICAL(2) → 升级到 EMERGENCY(3)
+             * - EMERGENCY(3) 持续执行关机流程
+             * - PANIC(4) 使用最后手段 */
+            if (level == 2 && g_escalation_persist >= 3) {
+                log_msg(LOG_CRIT, "CRITICAL 状态持续 %d 个周期，自动升级到 EMERGENCY",
+                        g_escalation_persist);
+                set_level(3);
+                level = 3;
+            }
+
             execute_escalation(level);
 
-            /* 如果已经到最高级别且仍在运行，说明关机流程卡住，继续等 */
+            /* 达到最高级别后，不再 sleep，持续尝试关机 */
             if (level >= 4) {
                 sleep(5);
                 continue;
             }
+        } else {
+            g_escalation_persist = 0;
         }
 
         /* 计算需要睡眠的时间，确保固定间隔 */
