@@ -426,59 +426,7 @@ static void health_check(void)
     int mem_pct, psi_mem, psi_io, load_x10, oom_now, oom_delta;
     double load_per_cpu;
 
-    /* ---- 内存检查 ---- */
-    mem_pct = get_mem_available_pct();
-    if (mem_pct >= 0 && mem_pct < cfg.mem_critical_pct) {
-        log_msg(LOG_CRIT, "可用内存仅剩 %d%%（阈值 %d%%）", mem_pct, cfg.mem_critical_pct);
-        set_level(2); /* CRITICAL */
-        return;
-    }
-    if (mem_pct >= 0 && mem_pct < cfg.mem_warning_pct) {
-        log_msg(LOG_WARNING, "可用内存剩 %d%%（警告阈值 %d%%）", mem_pct, cfg.mem_warning_pct);
-        set_level(1); /* WARNING */
-    }
-
-    /* ---- PSI 内存压力 ---- */
-    psi_mem = get_psi_mem_avg10();
-    if (psi_mem >= 0 && psi_mem >= cfg.psi_mem_critical * 10) {
-        log_msg(LOG_CRIT, "内存压力 PSI avg10=%d.%d（阈值 %d%%）",
-                psi_mem / 10, psi_mem % 10, cfg.psi_mem_critical);
-        set_level(2);
-        return;
-    }
-    if (psi_mem >= 0 && psi_mem >= cfg.psi_mem_warning * 10) {
-        log_msg(LOG_WARNING, "内存压力 PSI avg10=%d.%d（警告阈值 %d%%）",
-                psi_mem / 10, psi_mem % 10, cfg.psi_mem_warning);
-        set_level(1);
-    }
-
-    /* ---- CPU 负载 ---- */
-    load_x10 = get_load_avg_x10();
-    if (load_x10 >= 0) {
-        load_per_cpu = (double)load_x10 / 10.0 / (double)g_cpu_count;
-        if (load_per_cpu >= (double)cfg.cpu_load_critical) {
-            log_msg(LOG_CRIT, "CPU 负载 %.1f（核心数 %d, 阈值 %.1f/核心）",
-                    load_per_cpu, g_cpu_count, (double)cfg.cpu_load_critical);
-            set_level(2);
-            return;
-        }
-        if (load_per_cpu >= (double)cfg.cpu_load_warning) {
-            log_msg(LOG_WARNING, "CPU 负载 %.1f（核心数 %d, 警告阈值 %.1f/核心）",
-                    load_per_cpu, g_cpu_count, (double)cfg.cpu_load_warning);
-            set_level(1);
-        }
-    }
-
-    /* ---- IO 压力 ---- */
-    psi_io = get_psi_io_full_avg10();
-    if (psi_io >= 0 && psi_io >= cfg.psi_io_critical * 10) {
-        log_msg(LOG_CRIT, "IO 压力 full avg10=%d.%d（阈值 %d%%）",
-                psi_io / 10, psi_io % 10, cfg.psi_io_critical);
-        set_level(2);
-        return;
-    }
-
-    /* ---- OOM kill 检测 ---- */
+    /* ---- OOM kill 检测（最优先：系统真死了） ---- */
     oom_now = get_oom_kills();
     if (oom_now >= 0) {
         oom_delta = oom_now - g_oom_last;
@@ -489,6 +437,63 @@ static void health_check(void)
             set_level(3); /* 直接 EMERGENCY */
             return;
         }
+    }
+
+    /* ---- PSI 内存压力（比内存百分比更准确） ---- */
+    psi_mem = get_psi_mem_avg10();
+    mem_pct = get_mem_available_pct();
+
+    if (psi_mem >= 0 && mem_pct >= 0 &&
+        psi_mem >= cfg.psi_mem_critical * 10 &&
+        mem_pct < cfg.mem_critical_pct) {
+        /* 内存低 + 压力大 → 系统真正在 thrashing */
+        log_msg(LOG_CRIT, "内存压力 PSI avg10=%d.%d，可用仅 %d%%",
+                psi_mem / 10, psi_mem % 10, mem_pct);
+        set_level(2);
+        return;
+    }
+
+    if (psi_mem >= 0 && psi_mem >= cfg.psi_mem_critical * 10) {
+        log_msg(LOG_CRIT, "内存压力 PSI avg10=%d.%d（阈值 %d%%）",
+                psi_mem / 10, psi_mem % 10, cfg.psi_mem_critical);
+        set_level(2);
+        return;
+    }
+
+    if (psi_mem >= 0 && psi_mem >= cfg.psi_mem_warning * 10) {
+        log_msg(LOG_WARNING, "内存压力 PSI avg10=%d.%d（警告阈值 %d%%）",
+                psi_mem / 10, psi_mem % 10, cfg.psi_mem_warning);
+        set_level(1);
+    }
+
+    /* ---- IO 压力（卡死检测） ---- */
+    psi_io = get_psi_io_full_avg10();
+    if (psi_io >= 0 && psi_io >= cfg.psi_io_critical * 10) {
+        log_msg(LOG_CRIT, "IO 压力 full avg10=%d.%d（阈值 %d%%）",
+                psi_io / 10, psi_io % 10, cfg.psi_io_critical);
+        set_level(2);
+        return;
+    }
+
+    /* ---- CPU 负载（仅告警，不直接触发关机） ---- */
+    load_x10 = get_load_avg_x10();
+    if (load_x10 >= 0) {
+        load_per_cpu = (double)load_x10 / 10.0 / (double)g_cpu_count;
+        if (load_per_cpu >= (double)cfg.cpu_load_critical) {
+            log_msg(LOG_WARNING, "CPU 负载 %.1f（核心数 %d, 严重）",
+                    load_per_cpu, g_cpu_count);
+            set_level(1);
+        } else if (load_per_cpu >= (double)cfg.cpu_load_warning) {
+            log_msg(LOG_WARNING, "CPU 负载 %.1f（核心数 %d, 偏高）",
+                    load_per_cpu, g_cpu_count);
+            set_level(1);
+        }
+    }
+
+    /* ---- 纯低内存（PSI 正常→只是缓存占用，不关机） ---- */
+    if (mem_pct >= 0 && mem_pct < cfg.mem_warning_pct) {
+        log_msg(LOG_WARNING, "可用内存剩 %d%%（PSI 正常，仅提醒）", mem_pct);
+        set_level(1);
     }
 
     /* ---- 一切正常，降级 ---- */
@@ -996,10 +1001,11 @@ int main(int argc, char *argv[])
             g_escalation_persist++;
 
             /* 自动升级规则：
-             * - 连续 3 个周期仍为 CRITICAL(2) → 升级到 EMERGENCY(3)
+             * - 连续 15 个周期仍为 CRITICAL(2) → 升级到 EMERGENCY(3)
+             *   （约 30 秒持续异常，排除临时尖峰）
              * - EMERGENCY(3) 持续执行关机流程
              * - PANIC(4) 使用最后手段 */
-            if (level == 2 && g_escalation_persist >= 3) {
+            if (level == 2 && g_escalation_persist >= 15) {
                 log_msg(LOG_CRIT, "CRITICAL 状态持续 %d 个周期，自动升级到 EMERGENCY",
                         g_escalation_persist);
                 set_level(3);
