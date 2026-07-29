@@ -82,8 +82,8 @@ static const Config DEFAULT_CONFIG = {
     .mem_warning_pct        = 15,
     .psi_mem_critical       = 50,
     .psi_mem_warning        = 30,
-    .cpu_load_critical      = 5,
-    .cpu_load_warning       = 3,
+    .cpu_load_critical      = 2,
+    .cpu_load_warning       = 1,
     .oom_kill_threshold     = 1,
     .psi_io_critical        = 80,
     .dry_run                = false,
@@ -426,80 +426,77 @@ static void health_check(void)
     int mem_pct, psi_mem, psi_io, load_x10, oom_now, oom_delta;
     double load_per_cpu;
 
-    /* ---- OOM kill 检测（最优先：系统真死了） ---- */
+    /* ---- 最优先：OOM kill ---- */
     oom_now = get_oom_kills();
     if (oom_now >= 0) {
         oom_delta = oom_now - g_oom_last;
         g_oom_last = oom_now;
         if (oom_delta >= cfg.oom_kill_threshold) {
-            log_msg(LOG_CRIT, "检测到 OOM kill（本轮 %d 次，累计 %d 次）！",
-                    oom_delta, oom_now);
-            set_level(3); /* 直接 EMERGENCY */
+            log_msg(LOG_CRIT, "OOM kill！本轮 %d 次（累计 %d）", oom_delta, oom_now);
+            set_level(3);
             return;
         }
     }
 
-    /* ---- PSI 内存压力（比内存百分比更准确） ---- */
     psi_mem = get_psi_mem_avg10();
     mem_pct = get_mem_available_pct();
 
+    /* ---- PSI 内存压力 + 低内存 → thrashing ---- */
     if (psi_mem >= 0 && mem_pct >= 0 &&
         psi_mem >= cfg.psi_mem_critical * 10 &&
         mem_pct < cfg.mem_critical_pct) {
-        /* 内存低 + 压力大 → 系统真正在 thrashing */
-        log_msg(LOG_CRIT, "内存压力 PSI avg10=%d.%d，可用仅 %d%%",
+        log_msg(LOG_CRIT, "内存压力 %d.%d%% + 可用仅 %d%% → thrashing",
                 psi_mem / 10, psi_mem % 10, mem_pct);
         set_level(2);
         return;
     }
-
     if (psi_mem >= 0 && psi_mem >= cfg.psi_mem_critical * 10) {
-        log_msg(LOG_CRIT, "内存压力 PSI avg10=%d.%d（阈值 %d%%）",
+        log_msg(LOG_CRIT, "内存压力 PSI %d.%d%%（阈值 %d%%）",
                 psi_mem / 10, psi_mem % 10, cfg.psi_mem_critical);
         set_level(2);
         return;
     }
-
     if (psi_mem >= 0 && psi_mem >= cfg.psi_mem_warning * 10) {
-        log_msg(LOG_WARNING, "内存压力 PSI avg10=%d.%d（警告阈值 %d%%）",
+        log_msg(LOG_WARNING, "内存压力 PSI %d.%d%%（阈值 %d%%）",
                 psi_mem / 10, psi_mem % 10, cfg.psi_mem_warning);
         set_level(1);
     }
 
-    /* ---- IO 压力（卡死检测） ---- */
+    /* ---- IO 压力 ---- */
     psi_io = get_psi_io_full_avg10();
     if (psi_io >= 0 && psi_io >= cfg.psi_io_critical * 10) {
-        log_msg(LOG_CRIT, "IO 压力 full avg10=%d.%d（阈值 %d%%）",
+        log_msg(LOG_CRIT, "IO 压力 full %d.%d%%（阈值 %d%%）",
                 psi_io / 10, psi_io % 10, cfg.psi_io_critical);
         set_level(2);
         return;
     }
 
-    /* ---- CPU 负载（仅告警，不直接触发关机） ---- */
+    /* ---- CPU 负载 ---- */
     load_x10 = get_load_avg_x10();
     if (load_x10 >= 0) {
         load_per_cpu = (double)load_x10 / 10.0 / (double)g_cpu_count;
         if (load_per_cpu >= (double)cfg.cpu_load_critical) {
-            log_msg(LOG_WARNING, "CPU 负载 %.1f（核心数 %d, 严重）",
-                    load_per_cpu, g_cpu_count);
-            set_level(1);
-        } else if (load_per_cpu >= (double)cfg.cpu_load_warning) {
-            log_msg(LOG_WARNING, "CPU 负载 %.1f（核心数 %d, 偏高）",
-                    load_per_cpu, g_cpu_count);
+            log_msg(LOG_CRIT, "CPU 负载 %.1f/核心（阈值 %.1f）",
+                    load_per_cpu, (double)cfg.cpu_load_critical);
+            set_level(2);
+            return;
+        }
+        if (load_per_cpu >= (double)cfg.cpu_load_warning) {
+            log_msg(LOG_WARNING, "CPU 负载 %.1f/核心（阈值 %.1f）",
+                    load_per_cpu, (double)cfg.cpu_load_warning);
             set_level(1);
         }
     }
 
-    /* ---- 纯低内存（PSI 正常→只是缓存占用，不关机） ---- */
+    /* ---- 仅低内存（无压力→不关机） ---- */
     if (mem_pct >= 0 && mem_pct < cfg.mem_warning_pct) {
-        log_msg(LOG_WARNING, "可用内存剩 %d%%（PSI 正常，仅提醒）", mem_pct);
+        log_msg(LOG_WARNING, "可用内存 %d%%（无压力，仅提醒）", mem_pct);
         set_level(1);
     }
 
-    /* ---- 一切正常，降级 ---- */
-    if (get_level() == 1) {
+    /* ---- 恢复正常 ---- */
+    if (get_level() == 1)
         log_msg(LOG_INFO, "系统恢复正常");
-    }
     reset_level();
 }
 
